@@ -11,8 +11,8 @@ from sklearn.metrics import roc_auc_score
 from fast_tensor_data_loader import FastTensorDataLoader
 
 # data params
-ROW_LIMIT = 100000 # for quicker testing
-NUM_TEST_ROWS = 500 #000
+ROW_LIMIT = None # for quicker testing
+NUM_TEST_ROWS = 500000
 LABEL_COLUMN = 0
 FEATURE_COLUMNS = list(range(1, 22)) # low-level features only as per http://archive.ics.uci.edu/ml/datasets/HIGGS
 FILE_NAME = '/home/ubuntu/HIGGS.csv.gz'
@@ -89,7 +89,7 @@ def train_for_n_epochs(model: nn.Module, dataloader: DataLoader, epochs: int, na
             if global_step % log_every_n_steps == log_every_n_steps - 1:
                     writer.add_scalar('Loss/train', loss, global_step)
                     writer.add_scalar('Epoch', epoch, global_step)
-                    roc_auc = roc_auc_score(y_batch.numpy(), y_pred.detach().numpy())
+                    roc_auc = roc_auc_score(y_batch.cpu().numpy(), y_pred.cpu().detach().numpy())
                     writer.add_scalar('Loss/roc_auc', roc_auc, global_step)
 
             loss.backward()
