@@ -16,9 +16,10 @@ NUM_TEST_ROWS = 500 #000
 LABEL_COLUMN = 0
 FEATURE_COLUMNS = list(range(1, 22)) # low-level features only as per http://archive.ics.uci.edu/ml/datasets/HIGGS
 FILE_NAME = '/home/ubuntu/HIGGS.csv.gz'
+GPU = True
 
 # hyperparams
-BATCH_SIZE = 2048
+BATCH_SIZE = 16384
 NUM_EPOCHS = 10
 
 def load_data(file_name: str, test_rows: int, feature_columns: List[int], label_column: int, row_limit: int):
@@ -63,7 +64,7 @@ def create_model():
         nn.Sigmoid()
         )
 
-def train_for_n_epochs(model: nn.Module, dataloader: DataLoader, epochs: int, name: str, log_every_n_steps=100):
+def train_for_n_epochs(model: nn.Module, dataloader: DataLoader, epochs: int, name: str, log_every_n_steps=100, gpu: bool=True):
     """ Train a pytorch model for a set number of epochs, using a given dataloader. """
     optimizer = torch.optim.Adam(params=model.parameters())
     loss_fn = nn.BCELoss(reduction='mean')
@@ -75,6 +76,9 @@ def train_for_n_epochs(model: nn.Module, dataloader: DataLoader, epochs: int, na
 
     for epoch in range(epochs):
         for x_batch, y_batch in dataloader:
+            if gpu: # move batches from RAM into GPU memory
+                x_batch = x_batch.cuda()
+                y_batch = y_batch.cuda()
             y_pred = model(x_batch)
 
              # zero the parameter gradients
@@ -101,14 +105,16 @@ fast_train_batches = FastTensorDataLoader(train_x, train_y, batch_size=BATCH_SIZ
 # standard dataloader benchmark
 start = time.perf_counter()
 model = create_model()
-train_for_n_epochs(model=model, dataloader=default_train_batches, epochs=NUM_EPOCHS, name='default_data_loader')
+if GPU: # move model onto the GPU
+    model = model.cuda()
+train_for_n_epochs(model=model, dataloader=default_train_batches, epochs=NUM_EPOCHS, name='default_data_loader', gpu=GPU)
 
 default_elapsed_seconds = time.perf_counter() - start
 
 # improved dataloader benchmark
 start = time.perf_counter()
 
-train_for_n_epochs(model=model, dataloader=fast_train_batches, epochs=NUM_EPOCHS, name='custom_data_loader')
+train_for_n_epochs(model=model, dataloader=fast_train_batches, epochs=NUM_EPOCHS, name='custom_data_loader', gpu=GPU)
 
 fast_elapsed_seconds = time.perf_counter() - start
 
