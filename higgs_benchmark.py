@@ -51,7 +51,7 @@ def create_model():
     return nn.Sequential(
         nn.Linear(len(FEATURE_COLUMNS), hidden_units),
         nn.Tanh(),
-        nn.Dropout(dropout_rate=dropout_rate), 
+        nn.Dropout(p=dropout_rate), 
         nn.Linear(hidden_units, hidden_units),
         nn.Tanh(),
         nn.Linear(hidden_units, hidden_units),
@@ -63,7 +63,7 @@ def create_model():
 
 def train_for_n_epochs(model: nn.Module, dataloader: DataLoader, epochs: int, name: str, log_every_n_steps=100):
     """ Train a pytorch model for a set number of epochs, using a given dataloader. """
-    optimizer = torch.optim.Adam()
+    optimizer = torch.optim.Adam(params=model.parameters())
     loss_fn = nn.BCELoss(reduction='mean')
 
     # log to tensorboard
