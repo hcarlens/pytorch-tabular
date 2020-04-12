@@ -43,14 +43,14 @@ def load_data(file_name: str, test_rows: int, feature_columns: List[int], label_
 train_x, train_y, test_x, test_y = load_data(file_name=FILE_NAME, test_rows=NUM_TEST_ROWS,
             feature_columns=FEATURE_COLUMNS, label_column=LABEL_COLUMN, row_limit=ROW_LIMIT)
 
-def create_model():
+def create_model(gpu: bool=True):
     """
     Create a PyTorch neural net of depth 4. Architecture based on
     https://static-content.springer.com/esm/art%3A10.1038%2Fncomms5308/MediaObjects/41467_2014_BFncomms5308_MOESM1199_ESM.pdf. 
     """
     dropout_rate = 0.5
     hidden_units = 300
-    return nn.Sequential(
+    model = nn.Sequential(
         nn.Linear(len(FEATURE_COLUMNS), hidden_units),
         nn.Tanh(),
         nn.Dropout(p=dropout_rate), 
@@ -63,8 +63,11 @@ def create_model():
         nn.Linear(hidden_units, 1),
         nn.Sigmoid()
         )
+    if gpu: # move model onto the GPU
+        model = model.cuda()
+    return model
 
-def train_for_n_epochs(model: nn.Module, dataloader: DataLoader, epochs: int, name: str, log_every_n_steps=100, gpu: bool=True):
+def train_for_n_epochs(model: nn.Module, train_dataloader: DataLoader, test_x: torch.Tensor, test_y: torch.Tensor, epochs: int, name: str, log_every_n_steps=100, eval_every_n_steps=100, gpu: bool=True):
     """ Train a pytorch model for a set number of epochs, using a given dataloader. """
     optimizer = torch.optim.Adam(params=model.parameters())
     loss_fn = nn.BCELoss(reduction='mean')
@@ -74,8 +77,12 @@ def train_for_n_epochs(model: nn.Module, dataloader: DataLoader, epochs: int, na
 
     global_step = 0
 
+    if gpu: # move test set on to GPU
+        test_x = test_x.cuda()
+        test_y = test_y.cuda()
+
     for epoch in range(epochs):
-        for x_batch, y_batch in dataloader:
+        for x_batch, y_batch in train_dataloader:
             if gpu: # move batches from RAM into GPU memory
                 x_batch = x_batch.cuda()
                 y_batch = y_batch.cuda()
@@ -90,10 +97,19 @@ def train_for_n_epochs(model: nn.Module, dataloader: DataLoader, epochs: int, na
                     writer.add_scalar('Loss/train', loss, global_step)
                     writer.add_scalar('Epoch', epoch, global_step)
                     roc_auc = roc_auc_score(y_batch.numpy(), y_pred.detach().numpy())
-                    writer.add_scalar('Loss/roc_auc', roc_auc, global_step)
+                    writer.add_scalar('ROC_AUC/train', roc_auc, global_step)
+
 
             loss.backward()
             optimizer.step()
+
+            if global_step % eval_every_n_steps == eval_every_n_steps - 1:
+                    test_y_pred = model(test_x)
+                    test_loss = loss_fn(test_y_pred.squeeze(), test_y)
+                    writer.add_scalar('Loss/test', test_loss, global_step)
+                    test_roc_auc = roc_auc_score(test_y.numpy(), test_y_pred.detach().numpy())
+                    writer.add_scalar('ROC_AUC/test', test_roc_auc, global_step)
+
             global_step += 1
         print(f'Epoch {epoch} done. ')
 
@@ -103,18 +119,18 @@ default_train_batches = DataLoader(data_set, batch_size=BATCH_SIZE, shuffle=Fals
 fast_train_batches = FastTensorDataLoader(train_x, train_y, batch_size=BATCH_SIZE, shuffle=False)
 
 # standard dataloader benchmark
+model = create_model(gpu=GPU)
 start = time.perf_counter()
-model = create_model()
-if GPU: # move model onto the GPU
-    model = model.cuda()
-train_for_n_epochs(model=model, dataloader=default_train_batches, epochs=NUM_EPOCHS, name='default_data_loader', gpu=GPU)
+
+train_for_n_epochs(model=model, train_dataloader=default_train_batches, test_x=test_x, test_y=test_y, epochs=NUM_EPOCHS, name='default_data_loader', gpu=GPU)
 
 default_elapsed_seconds = time.perf_counter() - start
 
 # improved dataloader benchmark
+model = create_model(gpu=GPU)
 start = time.perf_counter()
 
-train_for_n_epochs(model=model, dataloader=fast_train_batches, epochs=NUM_EPOCHS, name='custom_data_loader', gpu=GPU)
+train_for_n_epochs(model=model, train_dataloader=fast_train_batches, test_x=test_x, test_y=test_y, epochs=NUM_EPOCHS, name='custom_data_loader', gpu=GPU)
 
 fast_elapsed_seconds = time.perf_counter() - start
 
