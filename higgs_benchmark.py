@@ -11,7 +11,8 @@ from sklearn.metrics import roc_auc_score
 from fast_tensor_data_loader import FastTensorDataLoader
 
 # data params
-NUM_TEST_ROWS = 500000
+ROW_LIMIT = 100000 # for quicker testing
+NUM_TEST_ROWS = 500 #000
 LABEL_COLUMN = 0
 FEATURE_COLUMNS = list(range(1, 22)) # low-level features only as per http://archive.ics.uci.edu/ml/datasets/HIGGS
 FILE_NAME = '/home/ubuntu/HIGGS.csv.gz'
@@ -20,10 +21,10 @@ FILE_NAME = '/home/ubuntu/HIGGS.csv.gz'
 BATCH_SIZE = 2048
 NUM_EPOCHS = 10
 
-def load_data(file_name: str, test_rows: int, feature_columns: List[int], label_column: int):
+def load_data(file_name: str, test_rows: int, feature_columns: List[int], label_column: int, row_limit: int):
     """ Load data from disk into train and test tensors """
     # load csv file
-    data = pd.read_csv(file_name, header=None, dtype='float32')
+    data = pd.read_csv(file_name, header=None, dtype='float32', nrows=row_limit)
 
     features = torch.from_numpy(data.loc[:, feature_columns].reset_index(drop=True).values)
     labels = torch.from_numpy(data.loc[:, label_column].reset_index(drop=True).values)
@@ -39,7 +40,7 @@ def load_data(file_name: str, test_rows: int, feature_columns: List[int], label_
 
 # load data
 train_x, train_y, test_x, test_y = load_data(file_name=FILE_NAME, test_rows=NUM_TEST_ROWS,
-            feature_columns=FEATURE_COLUMNS, label_column=LABEL_COLUMN)
+            feature_columns=FEATURE_COLUMNS, label_column=LABEL_COLUMN, row_limit=ROW_LIMIT)
 
 def create_model():
     """
@@ -59,6 +60,7 @@ def create_model():
         nn.Linear(hidden_units, hidden_units),
         nn.Tanh(),
         nn.Linear(hidden_units, 1),
+        nn.Sigmoid()
         )
 
 def train_for_n_epochs(model: nn.Module, dataloader: DataLoader, epochs: int, name: str, log_every_n_steps=100):
@@ -78,12 +80,12 @@ def train_for_n_epochs(model: nn.Module, dataloader: DataLoader, epochs: int, na
              # zero the parameter gradients
             optimizer.zero_grad()
 
-            loss = loss_fn(y_pred, y_batch)
+            loss = loss_fn(y_pred.squeeze(), y_batch)
 
             if global_step % log_every_n_steps == log_every_n_steps - 1:
                     writer.add_scalar('Loss/train', loss, global_step)
                     writer.add_scalar('Epoch', epoch, global_step)
-                    roc_auc = roc_auc_score(y_batch, y_pred)
+                    roc_auc = roc_auc_score(y_batch.numpy(), y_pred.detach().numpy())
                     writer.add_scalar('Loss/roc_auc', roc_auc, global_step)
 
             loss.backward()
@@ -93,13 +95,13 @@ def train_for_n_epochs(model: nn.Module, dataloader: DataLoader, epochs: int, na
 
 
 data_set = TensorDataset(train_x, train_y)
-default_train_batches = DataLoader(TensorDataset, batch_size=BATCH_SIZE, shuffle=False)
+default_train_batches = DataLoader(data_set, batch_size=BATCH_SIZE, shuffle=False)
 fast_train_batches = FastTensorDataLoader(train_x, train_y, batch_size=BATCH_SIZE, shuffle=False)
 
 # standard dataloader benchmark
 start = time.perf_counter()
 model = create_model()
-train_for_n_epochs(model=model, dataloader=default_train_batches, epochs=NUM_TEST_ROWS, name='default_data_loader')
+train_for_n_epochs(model=model, dataloader=default_train_batches, epochs=NUM_EPOCHS, name='default_data_loader')
 
 default_elapsed_seconds = time.perf_counter() - start
 
